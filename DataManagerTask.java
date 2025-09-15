@@ -1,8 +1,13 @@
-import java.util.concurrent.BlockingQueue;
+
+// DataManagerTask.java
 import java.io.File;
-import java.io.FileWriter;
-import java.io.PrintWriter;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.concurrent.BlockingQueue;
 
 public class DataManagerTask implements Runnable {
     private final BlockingQueue<TelemetryPacket> dataQueue;
@@ -15,14 +20,12 @@ public class DataManagerTask implements Runnable {
     }
 
     private void initializeFileSystem() {
-        System.out.println("Initializing file system at: " + new File(fileSystemRoot).getAbsolutePath());
-
+        System.out.println("Initializing simulated file system at: " + new File(fileSystemRoot).getAbsolutePath());
         for (APID apid : APID.values()) {
-            File dir = new File(fileSystemRoot + apid.getStoragePath());
-            if (!dir.exists()) {
-                dir.mkdirs();
-            }
+            new File(fileSystemRoot + apid.getStoragePath()).mkdirs();
         }
+        // Also create a directory for files being sent
+        new File(fileSystemRoot, "sending").mkdirs();
     }
 
     @Override
@@ -30,26 +33,35 @@ public class DataManagerTask implements Runnable {
         while (!Thread.currentThread().isInterrupted()) {
             try {
                 TelemetryPacket packet = dataQueue.take();
-                storagePacket(packet);
-
+                storePacket(packet);
                 WatchDogManager.pet(Thread.currentThread());
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                System.out.println("DataManagerTask interrupted.");
             }
         }
     }
 
-    private void storagePacket(TelemetryPacket packet) {
-        String dirPath = fileSystemRoot + packet.getAPID().getStoragePath();
-        String fileName = String.format("%d_%d.txt", packet.getAPID().getId(), packet.getTimestamp());
+    private void storePacket(TelemetryPacket packet) {
+        String dirPath = fileSystemRoot + packet.getApid().getStoragePath();
+        String fileName = String.format("%d_%d.bin", packet.getApid().getId(), packet.getTimestamp());
 
-        File file = new File(dirPath, fileName);
+        Path tempFile = Paths.get(dirPath, fileName + ".tmp");
+        Path finalFile = Paths.get(dirPath, fileName);
 
-        try (PrintWriter out = new PrintWriter(new FileWriter(file))) {
-            out.println(packet.toString());
-            System.out.printf("DataManagerTask: Stored packet to %s\n", file.getPath());
-        } catch (IOException exception) {
-            System.err.println("Failed to write file: " + exception.getMessage());
+        try (FileOutputStream fos = new FileOutputStream(tempFile.toFile())) {
+            fos.write(packet.toByteArray());
+        } catch (IOException e) {
+            System.err.println("Failed to write to temporary packet file: " + e.getMessage());
+            return; // Abort if write fails
+        }
+
+        try {
+            // Atomically move the temporary file to its final destination
+            Files.move(tempFile, finalFile, StandardCopyOption.ATOMIC_MOVE);
+            System.out.printf("DataManagerTask: Stored packet to %s\n", finalFile);
+        } catch (IOException e) {
+            System.err.println("Failed to move packet file to final destination: " + e.getMessage());
         }
     }
 }

@@ -1,10 +1,11 @@
+
+// SciencePayloadTask.java
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ThreadLocalRandom;
 
 public class SciencePayloadTask implements Runnable {
     private final BlockingQueue<TelemetryPacket> dataQueue;
-    private final int SLEEP_TIME = 10000; // 10 seconds.
-
     private int nominalSeqCount = 0;
     private int criticalSeqCount = 0;
 
@@ -12,37 +13,32 @@ public class SciencePayloadTask implements Runnable {
         this.dataQueue = dataQueue;
     }
 
-    private TelemetryPacket generateSciencePayloadData() {
-        TelemetryPacket packet;
-
-        if (ThreadLocalRandom.current().nextInt(10) == 0) { // 10% chance
-            String payload = "CRITICAL_EVENT: High energy particle detected.";
-            packet = new TelemetryPacket(APID.SCIENCE_CRITICAL, criticalSeqCount++, payload);
-            System.out.println("SciencePayloadTask: Generated CRITICAL packet - SEQ " + (criticalSeqCount - 1));
-        } else {
-            int particleCount = ThreadLocalRandom.current().nextInt(5, 20);
-            String payload = "NOMINAL_READING: Particle count=" + particleCount;
-            packet = new TelemetryPacket(APID.SCIENCE_NOMINAL, nominalSeqCount++, payload);
-            System.out.println("SciencePayloadTask: Generated NOMINAL packet - SEQ " + (nominalSeqCount - 1));
-        }
-
-        return packet;
-    }
-
     @Override
     public void run() {
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                Thread.sleep(SLEEP_TIME);
+                Thread.sleep(10000); // Simulate 10 seconds
 
-                TelemetryPacket packet = generateSciencePayloadData();
+                TelemetryPacket packet;
+                byte[] payload;
+                if (ThreadLocalRandom.current().nextInt(10) == 0) {
+                    String payloadStr = "CRITICAL_EVENT: High energy particle detected.";
+                    payload = payloadStr.getBytes(StandardCharsets.UTF_8);
+                    packet = new TelemetryPacket(APID.SCIENCE_CRITICAL, criticalSeqCount++, payload);
+                } else {
+                    int particleCount = ThreadLocalRandom.current().nextInt(5, 20);
+                    String payloadStr = "NOMINAL_READING: Particle count=" + particleCount;
+                    payload = payloadStr.getBytes(StandardCharsets.UTF_8);
+                    packet = new TelemetryPacket(APID.SCIENCE_NOMINAL, nominalSeqCount++, payload);
+                }
+
+                System.out.println("SciencePayloadTask: Generated " + packet);
                 dataQueue.put(packet);
-
                 WatchDogManager.pet(Thread.currentThread());
 
-            } catch (Exception e) {
+            } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                System.out.println("SciencePayloadTask interrupted!");
+                System.out.println("SciencePayloadTask interrupted.");
             }
         }
     }
